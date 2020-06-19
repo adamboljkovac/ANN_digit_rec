@@ -1,0 +1,207 @@
+import pandas as pd
+import numpy as np
+import os as os
+from PIL import Image
+from matplotlib import pyplot
+import numpy.random as nprand
+import csv
+import pandas
+
+import os
+training_dataset = np.asarray(pd.read_csv("Documents/Python Stuff/Digits/train.csv"))
+testing_dataset = np.asarray(pd.read_csv("Documents/Python Stuff/Digits/test.csv"))
+
+##This function is used to generate the image we're running (for testing)
+
+def Gen_Image(imagenumber , intrainset): #true if in training set
+    if intrainset == True:
+        fulldata = training_dataset
+        data = np.delete(fulldata, 0,1)
+    else:
+        startrow = 0
+        data = testing_dataset
+    
+    number = data[imagenumber,:]
+    image = np.reshape(number,(28,28))
+    pyplot.imshow(image, cmap='gray', vmin=0, vmax=255)
+    pyplot.show()
+
+##This object is the Network Object we are using
+
+class Neural_Network(object):
+    #define a function to initialize the network 'neurons', 'weights' and 'biases'
+    def __init__(self, n_i, n_h1, n_h2, n_o):
+        alpha_w = 0.1
+        alpha_b = 0.5
+        self.w1 = alpha_w*np.random.randn(n_i,n_h1)
+        self.b1 = alpha_b*np.random.randn(1,n_h1)
+        self.w2 = alpha_w*np.random.randn(n_h1,n_h2)
+        self.b2 = alpha_b/2*np.random.randn(1,n_h2)
+        self.w3 = alpha_w*np.random.randn(n_h2,n_o)
+        self.b3 = alpha_b/5*np.random.randn(1,n_o)
+    
+    #defines the forward propogation across the network
+    def forward(self, inputs):
+        #forward propogation through the network
+        self.z1 = np.dot(inputs, self.w1) + self.b1
+        self.a1 = self.sigmoid(self.z1)
+        self.z2 = np.dot(self.a1, self.w2) + self.b2
+        self.a2 = self.sigmoid(self.z2)
+        self.z3 = np.dot(self.a2, self.w3) + self.b3
+        output = self.sigmoid(self.z3)
+        return output 
+    
+    #defines the backwards propogation (ie training step) across the network
+    def backward(self, inputs, expected, output, learning_rate):
+        inputs = np.expand_dims(inputs,1)
+        
+        self.output_error = expected - output
+        self.output_delta = self.output_error*learning_rate*self.sigmoid_prime(output)
+        
+        self.a2_error = np.dot(self.output_delta, self.w3.T)
+        self.a2_delta = self.a2_error*learning_rate*self.sigmoid_prime(self.a2)
+        
+        self.a1_error = np.dot(self.a2_delta, self.w2.T)
+        self.a1_delta = self.a1_error*learning_rate*self.sigmoid_prime(self.a1)
+        
+        self.w1 += np.dot(inputs, self.a1_delta)
+        self.w2 += self.a1.T.dot(self.a2_delta)
+        self.w3 += self.a2.T.dot(self.output_delta)
+        self.total_error = np.sqrt(np.sum(self.output_error**2))
+        #print(self.total_error)
+        return self.total_error
+    
+    #the activation function being used is the sigmoid function
+    def sigmoid(self, inputs):
+        return 1/(1+np.exp(-inputs))
+    
+    #inverse of sigmoid used for backprop
+    def sigmoid_prime(self, inputs):
+        return inputs*(1-inputs)  
+    
+    #loop through this to train the nexwork
+    def train(self, inputs, expected, learning_rate):
+        output = self.forward(inputs)
+        error = self.backward(inputs, expected, output, learning_rate)
+        return error
+
+    #used to run trained network on a test set   
+    def final_check(self, inputs):
+        self.z1 = np.dot(inputs, self.w1) + self.b1
+        self.a1 = self.sigmoid(self.z1)
+        self.z2 = np.dot(self.a1, self.w2) + self.b2
+        self.a2 = self.sigmoid(self.z2)
+        self.z3 = np.dot(self.a2, self.w3) + self.b3
+        output = self.sigmoid(self.z3)
+        if max(output[0,:]) >= .8:
+            return np.argmax(output)
+        else:
+            return "UNKNOWN"
+        
+    def test_check(self, inputs):
+        self.z1 = np.dot(inputs, self.w1) + self.b1
+        self.a1 = self.sigmoid(self.z1)
+        self.z2 = np.dot(self.a1, self.w2) + self.b2
+        self.a2 = self.sigmoid(self.z2)
+        self.z3 = np.dot(self.a2, self.w3) + self.b3
+        output = self.sigmoid(self.z3)
+        return np.argmax(output)
+
+        
+def gen_rand_sets(n_train, n_test):
+    rand_train_vals = []
+    rand_test_vals = []
+    for i in range(0,n_train):
+        rand_train_vals.append(nprand.randint(0,42000))
+    for i in range(0,n_test):
+        rand_test_vals.append(nprand.randint(0,42000))
+    return  rand_train_vals, rand_test_vals
+
+def k_fold_cross_validation(n_train, k_folds):
+    rand_train_vals = []
+    rand_test_vals = []
+    for i in range(0,n_train):
+        a = nprand.randint(1,k_folds)
+        if a == 1:
+            rand_test_vals.append(a)
+        else:
+            rand_train_vals.append(a)
+    return  rand_train_vals, rand_test_vals
+  
+##Initiialize the network and the data
+data = np.delete(training_dataset,0,1)
+image_size = data[5,:]/256
+network = Neural_Network(len(image_size),128,64,10)
+
+rsn = 25  #number of random sets to build
+rss = [10000,4000]   #size of random training set and testing set sizes
+lrmax = 0.3   #learning rate maximum
+lrmin = 0.3  #learning rate minimum
+itern = 4  #number of training iterations on a random training set
+
+#Train the neural Network
+lr = np.linspace(lrmax,lrmin,num = rsn+1) #learning rate
+
+error = []
+accuracy = []
+loss = []
+iteration = []
+desired_number = []
+for i in range(0,rsn):
+    train,test = gen_rand_sets(rss[0], rss[1])
+    temp_loss = []
+    temp_accuracy = []
+    for k in range(0,itern):
+        for j in train:
+            desired_output = np.zeros((1,10))
+            desired_number = training_dataset[j,0]
+            desired_output[0, desired_number] = 1
+            prev_error = network.train(data[j,:]/256, desired_output, lr[rsn])
+            error.append(prev_error)
+            temp_loss.append(prev_error)
+        completion = (i/rsn+k/itern/rsn)*100
+        formatted_completion = "{:.2f}".format(completion)
+        print(formatted_completion,"% complete")
+    for l in test:
+        check = network.final_check(data[l,:])
+        if training_dataset[l,0] == check:
+            temp_accuracy.append(1)
+        else:
+            temp_accuracy.append(0)
+    loss.append(np.average(temp_loss))
+    accuracy.append(np.sum(temp_accuracy)/len(test))
+            
+            
+pyplot.plot(error, 'bo', markersize=0.1)
+pyplot.show()
+pyplot.plot(accuracy)
+pyplot.show()
+pyplot.plot(loss)
+pyplot.show()
+
+right = []
+wrong = []
+i=0
+for n in range(0,42000):
+    check = network.final_check(data[n,:])
+    if training_dataset[n,0] == check:
+        right.append(1)
+        wrong.append(0)
+    else:
+        right.append(0)
+        wrong.append(1)
+print("The network got", np.sum(right),"right and", np.sum(wrong),"wrong")
+print("That is ", 100*np.sum(right)/(np.sum(right)+np.sum(wrong)), "percent correct")
+
+## Kaggle Submission Format
+ID = []
+result = []
+for n in range(0,len(testing_dataset)):
+    check = network.test_check(testing_dataset[n,:])
+    ID.append(n+1)
+    result.append(check)
+    
+submission =pd.DataFrame({'ImageId':ID,
+                           'Label':result})
+
+submission.to_csv("Documents/Python Stuff/Digits/kaggle.csv", sep=',',index=False)
